@@ -68,6 +68,11 @@ func LinkAuth(w http.ResponseWriter, r *http.Request) {
 		ClientRequest: cr,
 		UserActLog:    ua,
 	}
+	// 锁定状态判断
+	if !lockManager.CheckLocked(cr.Auth.Username, r.RemoteAddr) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		return
+	}
 	// setCommonHeader(w)
 	if cr.Type == "logout" {
 		// 退出删除session信息
@@ -78,7 +83,7 @@ func LinkAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 检查客户端证书认证
-	if base.Cfg.AuthAloneCert {
+	if base.Cfg.AuthCert {
 		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
 			clientCert := r.TLS.PeerCertificates[0]
 			username := clientCert.Subject.CommonName
@@ -107,13 +112,20 @@ func LinkAuth(w http.ResponseWriter, r *http.Request) {
 				ua.Info = "客户端证书验证失败"
 				ua.Status = dbdata.UserAuthFail
 				dbdata.UserActLogIns.Add(*ua, userAgent)
-
+				if base.Cfg.AuthOnlyCert {
+					base.Warn("已开启仅证书验证，但客户端证书验证失败,拒绝访问")
+					return
+				}
+				base.Warn("已开启证书验证，但客户端证书验证失败,回退到用户名密码验证")
+			}
+		} else {
+			if base.Cfg.AuthOnlyCert {
+				base.Warn("已开启仅证书验证，但客户端未提供有效证书,拒绝访问")
+				w.WriteHeader(http.StatusForbidden)
 				return
 			}
+			base.Warn("已开启证书验证，但客户端未提供有效证书,回退到用户名密码验证")
 		}
-		base.Warn("启用了独立证书验证，但用户未提供有效证书")
-		w.WriteHeader(http.StatusForbidden)
-		return
 	}
 
 	if cr.Type == "init" {
@@ -126,12 +138,6 @@ func LinkAuth(w http.ResponseWriter, r *http.Request) {
 	// 登陆参数判断
 	if cr.Type != "auth-reply" {
 		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	// 锁定状态判断
-	if !lockManager.CheckLocked(cr.Auth.Username, r.RemoteAddr) {
-		w.WriteHeader(http.StatusTooManyRequests)
 		return
 	}
 

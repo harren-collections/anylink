@@ -33,7 +33,8 @@ var configs = []config{
 	{Typ: cfgStr, Name: "db_source", Usage: "数据库source", ValStr: "./conf/anylink.db"},
 	{Typ: cfgStr, Name: "cert_file", Usage: "证书文件", ValStr: "./conf/vpn_cert.pem"},
 	{Typ: cfgStr, Name: "cert_key", Usage: "证书密钥", ValStr: "./conf/vpn_cert.key"},
-	{Typ: cfgBool, Name: "auth_alone_cert", Usage: "启用独立证书验证", ValBool: false},
+	{Typ: cfgBool, Name: "auth_cert", Usage: "启用证书验证", ValBool: false},
+	{Typ: cfgBool, Name: "auth_only_cert", Usage: "仅证书验证", ValBool: false},
 	{Typ: cfgStr, Name: "client_ca_file", Usage: "客户端证书CA证书", ValStr: "./conf/client_ca.pem"},
 	{Typ: cfgStr, Name: "client_ca_key_file", Usage: "客户端证书CA密钥", ValStr: "./conf/client_ca.key"},
 	{Typ: cfgStr, Name: "files_path", Usage: "外部下载文件路径", ValStr: "./conf/files"},
@@ -42,6 +43,7 @@ var configs = []config{
 	{Typ: cfgBool, Name: "http_server_log", Usage: "开启go标准库http.Server的日志", ValBool: false},
 	{Typ: cfgBool, Name: "pprof", Usage: "开启pprof", ValBool: true},
 	{Typ: cfgStr, Name: "issuer", Usage: "系统名称", ValStr: "XX公司VPN"},
+	{Typ: cfgBool, Name: "enable_banner", Usage: "登录横幅", ValBool: true},
 	{Typ: cfgStr, Name: "admin_user", Usage: "管理用户名", ValStr: "admin"},
 	{Typ: cfgStr, Name: "admin_pass", Usage: "管理用户密码", ValStr: defaultPwd},
 	{Typ: cfgStr, Name: "admin_otp", Usage: "管理用户otp,生成命令 ./anylink tool -o", ValStr: ""},
@@ -80,6 +82,7 @@ var configs = []config{
 
 	{Typ: cfgBool, Name: "anti_brute_force", Usage: "是否开启防爆功能", ValBool: true},
 	{Typ: cfgStr, Name: "ip_whitelist", Usage: "全局IP白名单,多个用逗号分隔，支持单IP和CIDR范围", ValStr: "192.168.90.1,172.16.0.0/24"},
+	{Typ: cfgStr, Name: "ip_blacklist", Usage: "全局IP黑名单,多个用逗号分隔，支持单IP和CIDR范围", ValStr: ""},
 
 	{Typ: cfgInt, Name: "max_ban_score", Usage: "单位时间内最大尝试次数，0为关闭该功能", ValInt: 5},
 	{Typ: cfgInt, Name: "ban_reset_time", Usage: "设置单位时间(秒)，超过则重置计数", ValInt: 10},

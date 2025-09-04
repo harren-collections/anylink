@@ -47,7 +47,8 @@ type ServerConfig struct {
 	DbSource            string `json:"db_source"`
 	CertFile            string `json:"cert_file"`
 	CertKey             string `json:"cert_key"`
-	AuthAloneCert       bool   `json:"auth_alone_cert"`
+	AuthCert            bool   `json:"auth_cert"`
+	AuthOnlyCert        bool   `json:"auth_only_cert"`
 	ClientCertCAFile    string `json:"client_ca_file"`
 	ClientCertCAKeyFile string `json:"client_ca_key_file"`
 	FilesPath           string `json:"files_path"`
@@ -56,6 +57,7 @@ type ServerConfig struct {
 	HttpServerLog       bool   `json:"http_server_log"`
 	Pprof               bool   `json:"pprof"`
 	Issuer              string `json:"issuer"`
+	EnableBanner        bool   `json:"enable_banner"`
 	AdminUser           string `json:"admin_user"`
 	AdminPass           string `json:"admin_pass"`
 	AdminOtp            string `json:"admin_otp"`
@@ -95,7 +97,8 @@ type ServerConfig struct {
 	EncryptionPassword bool `json:"encryption_password"`
 
 	AntiBruteForce bool   `json:"anti_brute_force"`
-	IPWhitelist    string `json:"ip_whitelist"`
+	IPWhiteList    string `json:"ip_whitelist"`
+	IPBlackList    string `json:"ip_blacklist"`
 
 	MaxBanCount  int `json:"max_ban_score"`
 	BanResetTime int `json:"ban_reset_time"`
