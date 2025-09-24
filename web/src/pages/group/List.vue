@@ -44,13 +44,13 @@
           <template slot-scope="scope">
             <el-row v-for="(item, inx) in scope.row.route_include.slice(0, readMinRows)" :key="inx">{{
               item.val
-            }}
+              }}
             </el-row>
             <div v-if="scope.row.route_include.length > readMinRows">
               <div v-if="readMore[`ri_${scope.row.id}`]">
                 <el-row v-for="(item, inx) in scope.row.route_include.slice(readMinRows)" :key="inx">{{
                   item.val
-                }}
+                  }}
                 </el-row>
               </div>
               <el-button size="mini" type="text" @click="toggleMore(`ri_${scope.row.id}`)">
@@ -64,13 +64,13 @@
           <template slot-scope="scope">
             <el-row v-for="(item, inx) in scope.row.route_exclude.slice(0, readMinRows)" :key="inx">{{
               item.val
-            }}
+              }}
             </el-row>
             <div v-if="scope.row.route_exclude.length > readMinRows">
               <div v-if="readMore[`re_${scope.row.id}`]">
                 <el-row v-for="(item, inx) in scope.row.route_exclude.slice(readMinRows)" :key="inx">{{
                   item.val
-                }}
+                  }}
                 </el-row>
               </div>
               <el-button size="mini" type="text" @click="toggleMore(`re_${scope.row.id}`)">
@@ -224,6 +224,7 @@
                 <el-radio label="local" border>本地</el-radio>
                 <el-radio label="radius" border>Radius</el-radio>
                 <el-radio label="ldap" border>LDAP</el-radio>
+                <el-radio label="wxwork" border>企业微信</el-radio>
               </el-radio-group>
             </el-form-item>
             <template v-if="ruleForm.auth.type == 'radius'">
@@ -282,6 +283,20 @@
               <el-form-item label="受限用户组" prop="auth.ldap.member_of">
                 <el-input v-model="ruleForm.auth.ldap.member_of"
                   placeholder="选填, 只允许指定组登入, 例如 CN=HomeWork,DC=abc,DC=com"></el-input>
+              </el-form-item>
+            </template>
+            <template v-if="ruleForm.auth.type == 'wxwork'">
+              <el-form-item label="企业ID" prop="auth.wxwork.corp_id"
+                :rules="this.ruleForm.auth.type == 'wxwork' ? this.rules['auth.wxwork.corp_id'] : [{ required: false }]">
+                <el-input v-model="ruleForm.auth.wxwork.corp_id" placeholder="例如 ww7164hdf7kc84073"></el-input>
+              </el-form-item>
+              <el-form-item label="应用ID" prop="auth.wxwork.agent_id"
+                :rules="this.ruleForm.auth.type == 'wxwork' ? this.rules['auth.wxwork.agent_id'] : [{ required: false }]">
+                <el-input v-model="ruleForm.auth.wxwork.agent_id" placeholder="例如 1000001"></el-input>
+              </el-form-item>
+              <el-form-item label="应用Secret" prop="auth.wxwork.secret"
+                :rules="this.ruleForm.auth.type == 'wxwork' ? this.rules['auth.wxwork.secret'] : [{ required: false }]">
+                <el-input type="password" v-model="ruleForm.auth.wxwork.secret" placeholder="应用的Secret密钥"></el-input>
               </el-form-item>
             </template>
           </el-tab-pane>
@@ -410,12 +425,13 @@
             </el-form-item>
           </el-tab-pane>
           <el-form-item>
-            <templete v-if="activeTab == 'authtype' && ruleForm.auth.type != 'local'">
+            <templete
+              v-if="activeTab == 'authtype' && (ruleForm.auth.type == 'ldap' || ruleForm.auth.type == 'radius')">
               <el-button @click="openAuthLoginDialog()" style="margin-right:10px">测试登录</el-button>
             </templete>
             <el-button type="primary" @click="submitForm('ruleForm')">保存</el-button>
             <el-button @click="closeDialog">取消</el-button>
-            <templete v-if="activeTab == 'authtype' && ruleForm.auth.type != 'local'">
+            <templete v-if="activeTab == 'authtype' && ruleForm.auth.type == 'ldap'">
               <el-button type="success" @click="saveldapUsers" :loading="saveLoading"
                 style="margin-left:10px">同步用户</el-button>
               <el-tooltip content="保存或更新LDAP用户到本地" placement="top">
@@ -503,6 +519,11 @@ export default {
           bind_pwd: "",
           enable_otp: false,
         },
+        wxwork: {
+          corp_id: "",
+          agent_id: "",
+          secret: "",
+        },
       },
       ruleForm: {
         bandwidth: 0,
@@ -573,6 +594,15 @@ export default {
         ],
         "auth.ldap.search_attr": [
           { required: true, message: '请输入用户唯一ID', trigger: 'blur' }
+        ],
+        'auth.wxwork.corp_id': [
+          { required: true, message: '请输入企业ID', trigger: 'blur' },
+        ],
+        'auth.wxwork.agent_id': [
+          { required: true, message: '请输入应用ID', trigger: 'blur' },
+        ],
+        'auth.wxwork.secret': [
+          { required: true, message: '请输入应用Secret', trigger: 'blur' },
         ],
       },
     }
