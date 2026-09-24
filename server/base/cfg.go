@@ -34,29 +34,34 @@ var (
 
 type ServerConfig struct {
 	// LinkAddr      string `json:"link_addr"`
-	Conf              string `json:"conf"`
-	Profile           string `json:"profile"`
-	ProfileName       string `json:"profile_name"`
-	ServerAddr        string `json:"server_addr"`
-	ServerDTLS        bool   `json:"server_dtls"`
-	ServerDTLSAddr    string `json:"server_dtls_addr"`
-	AdvertiseDTLSAddr string `json:"advertise_dtls_addr"`
-	AdminAddr         string `json:"admin_addr"`
-	ProxyProtocol     bool   `json:"proxy_protocol"`
-	DbType            string `json:"db_type"`
-	DbSource          string `json:"db_source"`
-	CertFile          string `json:"cert_file"`
-	CertKey           string `json:"cert_key"`
-	FilesPath         string `json:"files_path"`
-	LogPath           string `json:"log_path"`
-	LogLevel          string `json:"log_level"`
-	HttpServerLog     bool   `json:"http_server_log"`
-	Pprof             bool   `json:"pprof"`
-	Issuer            string `json:"issuer"`
-	AdminUser         string `json:"admin_user"`
-	AdminPass         string `json:"admin_pass"`
-	AdminOtp          string `json:"admin_otp"`
-	JwtSecret         string `json:"jwt_secret"`
+	Conf                string `json:"conf"`
+	Profile             string `json:"profile"`
+	ProfileName         string `json:"profile_name"`
+	ServerAddr          string `json:"server_addr"`
+	ServerDTLS          bool   `json:"server_dtls"`
+	ServerDTLSAddr      string `json:"server_dtls_addr"`
+	AdvertiseDTLSAddr   string `json:"advertise_dtls_addr"`
+	AdminAddr           string `json:"admin_addr"`
+	ProxyProtocol       bool   `json:"proxy_protocol"`
+	DbType              string `json:"db_type"`
+	DbSource            string `json:"db_source"`
+	CertFile            string `json:"cert_file"`
+	CertKey             string `json:"cert_key"`
+	AuthCert            bool   `json:"auth_cert"`
+	AuthOnlyCert        bool   `json:"auth_only_cert"`
+	ClientCertCAFile    string `json:"client_ca_file"`
+	ClientCertCAKeyFile string `json:"client_ca_key_file"`
+	FilesPath           string `json:"files_path"`
+	LogPath             string `json:"log_path"`
+	LogLevel            string `json:"log_level"`
+	HttpServerLog       bool   `json:"http_server_log"`
+	Pprof               bool   `json:"pprof"`
+	Issuer              string `json:"issuer"`
+	EnableBanner        bool   `json:"enable_banner"`
+	AdminUser           string `json:"admin_user"`
+	AdminPass           string `json:"admin_pass"`
+	AdminOtp            string `json:"admin_otp"`
+	JwtSecret           string `json:"jwt_secret"`
 
 	LinkMode    string `json:"link_mode"`    // tun tap macvtap ipvtap
 	Ipv4Master  string `json:"ipv4_master"`  // eth0
@@ -86,13 +91,19 @@ type ServerConfig struct {
 	Compression     bool `json:"compression"`       // bool
 	NoCompressLimit int  `json:"no_compress_limit"` // int
 
-	DisplayError       bool `json:"display_error"`
-	ExcludeExportIp    bool `json:"exclude_export_ip"`
-	AuthAloneOtp       bool `json:"auth_alone_otp"`
-	EncryptionPassword bool `json:"encryption_password"`
+	DisplayError               bool   `json:"display_error"`
+	ExcludeExportIp            bool   `json:"exclude_export_ip"`
+	AuthAloneOtp               bool   `json:"auth_alone_otp"`
+	SendOtp                    bool   `json:"send_otp"`
+	SendOtpType                string `json:"send_otp_type"`
+	EncryptionPassword         bool   `json:"encryption_password"`
+	WexinWorkVerifyFileName    string `json:"weixin_work_verify_file_name"`
+	WexinWorkVerifyFileContent string `json:"weixin_work_verify_file_content"`
+	SyncLdapUsers              bool   `json:"sync_ldap_users"`
 
 	AntiBruteForce bool   `json:"anti_brute_force"`
-	IPWhitelist    string `json:"ip_whitelist"`
+	IPWhiteList    string `json:"ip_whitelist"`
+	IPBlackList    string `json:"ip_blacklist"`
 
 	MaxBanCount  int `json:"max_ban_score"`
 	BanResetTime int `json:"ban_reset_time"`

@@ -96,6 +96,8 @@ export default {
     },
     created() {
         this.getLocks();
+        this.$emit('update:route_path', this.$route.path)
+        this.$emit('update:route_name', ['用户信息', '锁定管理'])
     }
 };
 </script>

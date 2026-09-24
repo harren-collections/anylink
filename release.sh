@@ -17,6 +17,7 @@ cpath=$(pwd)
 ver=$(cat version)
 echo "当前版本 $ver"
 
+
 rm -rf artifact-dist
 mkdir artifact-dist
 

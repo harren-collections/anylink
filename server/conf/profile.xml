@@ -3,38 +3,32 @@
                    xsi:schemaLocation="http://schemas.xmlsoap.org/encoding/ AnyConnectProfile.xsd">
 
     <ClientInitialization>
-        <UseStartBeforeLogon UserControllable="false">false</UseStartBeforeLogon>
+        <UseStartBeforeLogon>false</UseStartBeforeLogon>
+        <AutoConnectOnStart>true</AutoConnectOnStart>
         <StrictCertificateTrust>false</StrictCertificateTrust>
         <RestrictPreferenceCaching>false</RestrictPreferenceCaching>
         <RestrictTunnelProtocols>IPSec</RestrictTunnelProtocols>
         <BypassDownloader>true</BypassDownloader>
-        <AutoUpdate UserControllable="false">false</AutoUpdate>
-        <LocalLanAccess UserControllable="true">true</LocalLanAccess>
+        <AutoUpdate>false</AutoUpdate>
+        <LocalLanAccess>true</LocalLanAccess>
         <WindowsVPNEstablishment>AllowRemoteUsers</WindowsVPNEstablishment>
         <LinuxVPNEstablishment>AllowRemoteUsers</LinuxVPNEstablishment>
         <CertEnrollmentPin>pinAllowed</CertEnrollmentPin>
+        <CertificateStore>User</CertificateStore>
+        <AutomaticCertSelection>true</AutomaticCertSelection>
         <CertificateMatch>
             <KeyUsage>
-                <MatchKey>Digital_Signature</MatchKey>
+                <DigitalSignature>true</DigitalSignature>
             </KeyUsage>
             <ExtendedKeyUsage>
-                <ExtendedMatchKey>ClientAuth</ExtendedMatchKey>
+                <ClientAuth>true</ClientAuth>
             </ExtendedKeyUsage>
         </CertificateMatch>
-
     </ClientInitialization>
-
     <ServerList>
-
         <HostEntry>
-            <HostName>VPN</HostName>
-            <HostAddress>localhost</HostAddress>
+            <HostName>AnyLink</HostName>
+            <HostAddress>https://anylink.XXX.com</HostAddress>
         </HostEntry>
-
-        <HostEntry>
-            <HostName>VPN2</HostName>
-            <HostAddress>localhost2</HostAddress>
-        </HostEntry>
-
     </ServerList>
 </AnyConnectProfile>

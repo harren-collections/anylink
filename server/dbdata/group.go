@@ -96,6 +96,15 @@ func GetGroupNamesNormal() []string {
 	return names
 }
 
+func GetAllGroups() ([]Group, error) {
+	var groups []Group
+	if err := FindWhere(&groups, 0, 0, "status=1"); err != nil {
+		base.Error(err)
+		return nil, err
+	}
+	return groups, nil
+}
+
 func GetGroupNamesIds() []GroupNameId {
 	var datas []Group
 	err := Find(&datas, 0, 0)

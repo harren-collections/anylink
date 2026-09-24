@@ -24,7 +24,15 @@ type LockState struct {
 	LockTime     time.Time `json:"lock_time"`   // 锁定截止时间
 	LastAttempt  time.Time `json:"lastAttempt"` // 最后一次尝试的时间
 }
-type IPWhitelists struct {
+
+type IPListType int
+
+const (
+	IPListWhite IPListType = iota
+	IPListBlack
+)
+
+type IPList struct {
 	IP   net.IP
 	CIDR *net.IPNet
 }
@@ -35,7 +43,7 @@ type LockManager struct {
 	ipLocks       map[string]*LockState            // 全局IP锁定状态
 	userLocks     map[string]*LockState            // 全局用户锁定状态
 	ipUserLocks   map[string]map[string]*LockState // 单用户IP锁定状态
-	ipWhitelists  []IPWhitelists                   // 全局IP白名单，包含IP地址和CIDR范围
+	ipLists       map[IPListType][]IPList          // 统一的IP列表管理
 	cleanupTicker *time.Ticker
 }
 
@@ -46,10 +54,10 @@ func GetLockManager() *LockManager {
 	once.Do(func() {
 		lockmanager = &LockManager{
 			// LoginStatus:  sync.Map{},
-			ipLocks:      make(map[string]*LockState),
-			userLocks:    make(map[string]*LockState),
-			ipUserLocks:  make(map[string]map[string]*LockState),
-			ipWhitelists: make([]IPWhitelists, 0),
+			ipLocks:     make(map[string]*LockState),
+			userLocks:   make(map[string]*LockState),
+			ipUserLocks: make(map[string]map[string]*LockState),
+			ipLists:     make(map[IPListType][]IPList),
 		}
 	})
 	return lockmanager
@@ -64,7 +72,8 @@ func InitLockManager() {
 			base.Cfg.GlobalLockStateExpirationTime = defaultGlobalLockStateExpirationTime
 		}
 		lm.StartCleanupTicker()
-		lm.InitIPWhitelist()
+		lm.InitIPList(IPListWhite, base.Cfg.IPWhiteList)
+		lm.InitIPList(IPListBlack, base.Cfg.IPBlackList)
 	}
 }
 
@@ -181,40 +190,50 @@ func (lm *LockManager) GetLocksInfo() []LockInfo {
 	return locksInfo
 }
 
-// 初始化IP白名单
-func (lm *LockManager) InitIPWhitelist() {
-	ipWhitelist := strings.Split(base.Cfg.IPWhitelist, ",")
-	for _, ipWhitelist := range ipWhitelist {
-		ipWhitelist = strings.TrimSpace(ipWhitelist)
-		if ipWhitelist == "" {
+// 初始化IP列表
+func (lm *LockManager) InitIPList(listType IPListType, config string) {
+	if lm.ipLists == nil {
+		lm.ipLists = make(map[IPListType][]IPList)
+	}
+
+	ipList := strings.Split(config, ",")
+	for _, ipItem := range ipList {
+		ipItem = strings.TrimSpace(ipItem)
+		if ipItem == "" {
 			continue
 		}
 
-		_, ipNet, err := net.ParseCIDR(ipWhitelist)
+		_, ipNet, err := net.ParseCIDR(ipItem)
 		if err == nil {
-			lm.ipWhitelists = append(lm.ipWhitelists, IPWhitelists{CIDR: ipNet})
+			lm.ipLists[listType] = append(lm.ipLists[listType], IPList{CIDR: ipNet})
 			continue
 		}
 
-		ip := net.ParseIP(ipWhitelist)
+		ip := net.ParseIP(ipItem)
 		if ip != nil {
-			lm.ipWhitelists = append(lm.ipWhitelists, IPWhitelists{IP: ip})
+			lm.ipLists[listType] = append(lm.ipLists[listType], IPList{IP: ip})
 			continue
 		}
 	}
 }
 
-// 检查 IP 是否在白名单中
-func (lm *LockManager) IsWhitelisted(ip string) bool {
+// 检查 IP 列表
+func (lm *LockManager) IsInIPList(ip string, listType IPListType) bool {
 	clientIP := net.ParseIP(ip)
 	if clientIP == nil {
 		return false
 	}
-	for _, ipWhitelist := range lm.ipWhitelists {
-		if ipWhitelist.CIDR != nil && ipWhitelist.CIDR.Contains(clientIP) {
+
+	ipList, exists := lm.ipLists[listType]
+	if !exists {
+		return false
+	}
+
+	for _, ipItem := range ipList {
+		if ipItem.CIDR != nil && ipItem.CIDR.Contains(clientIP) {
 			return true
 		}
-		if ipWhitelist.IP != nil && ipWhitelist.IP.Equal(clientIP) {
+		if ipItem.IP != nil && ipItem.IP.Equal(clientIP) {
 			return true
 		}
 	}
@@ -237,6 +256,7 @@ func (lm *LockManager) CleanupExpiredLocks() {
 	defer lm.mu.Unlock()
 
 	for ip, state := range lm.ipLocks {
+		// 如果超过全局锁定状态生命周期，则删除记录
 		if !lm.CheckLockState(state, now, base.Cfg.GlobalIPBanResetTime) ||
 			now.Sub(state.LastAttempt) > time.Duration(base.Cfg.GlobalLockStateExpirationTime)*time.Second {
 			delete(lm.ipLocks, ip)
@@ -244,6 +264,7 @@ func (lm *LockManager) CleanupExpiredLocks() {
 	}
 
 	for user, state := range lm.userLocks {
+		// 如果超过全局锁定状态生命周期，则删除记录
 		if !lm.CheckLockState(state, now, base.Cfg.GlobalUserBanResetTime) ||
 			now.Sub(state.LastAttempt) > time.Duration(base.Cfg.GlobalLockStateExpirationTime)*time.Second {
 			delete(lm.userLocks, user)
@@ -252,6 +273,7 @@ func (lm *LockManager) CleanupExpiredLocks() {
 
 	for user, ipMap := range lm.ipUserLocks {
 		for ip, state := range ipMap {
+			// 如果超过全局锁定状态生命周期，则删除记录
 			if !lm.CheckLockState(state, now, base.Cfg.BanResetTime) ||
 				now.Sub(state.LastAttempt) > time.Duration(base.Cfg.GlobalLockStateExpirationTime)*time.Second {
 				delete(ipMap, ip)
@@ -372,16 +394,26 @@ func (lm *LockManager) UpdateUserIPLock(username, ip string, now time.Time, succ
 
 // 更新锁定状态
 func (lm *LockManager) UpdateLockState(state *LockState, now time.Time, success bool, maxBanCount, lockTime int) {
+	// 检查锁定是否已经过期
+	if state.Locked && !state.LockTime.IsZero() && now.After(state.LockTime) {
+		lm.Unlock(state) // 锁定期过后解锁
+	}
+
+	// 更新最后一次尝试时间
+	state.LastAttempt = now
+
 	if success {
 		lm.Unlock(state) // 成功登录后解锁
 	} else {
-		state.FailureCount++
-		if state.FailureCount >= maxBanCount {
-			state.LockTime = now.Add(time.Duration(lockTime) * time.Second)
-			state.Locked = true // 超过阈值时锁定
+		// 只有未锁定状态下才增加失败计数
+		if !state.Locked {
+			state.FailureCount++
+			if state.FailureCount >= maxBanCount {
+				state.LockTime = now.Add(time.Duration(lockTime) * time.Second)
+				state.Locked = true // 超过阈值时锁定
+			}
 		}
 	}
-	state.LastAttempt = now
 }
 
 // 检查锁定状态
@@ -391,14 +423,15 @@ func (lm *LockManager) CheckLockState(state *LockState, now time.Time, resetTime
 	}
 
 	// 如果超过锁定时间，重置锁定状态
-	if !state.LockTime.IsZero() && now.After(state.LockTime) {
+	if state.Locked && !state.LockTime.IsZero() && now.After(state.LockTime) {
 		lm.Unlock(state) // 锁定期过后解锁
 		return false
 	}
 	// 如果超过窗口时间，重置失败计数
 	if now.Sub(state.LastAttempt) > time.Duration(resetTime)*time.Second {
-		state.FailureCount = 0
-		return false
+		if !state.Locked {
+			state.FailureCount = 0
+		}
 	}
 	return state.Locked
 }
@@ -424,8 +457,14 @@ func (lm *LockManager) CheckLocked(username, ipaddr string) bool {
 	now := time.Now()
 
 	// 检查IP是否在白名单中
-	if lm.IsWhitelisted(ip) {
+	if lm.IsInIPList(ip, IPListWhite) {
 		return true
+	}
+
+	// 检查IP是否在黑名单中
+	if lm.IsInIPList(ip, IPListBlack) {
+		base.Warn("IP", ip, "is blacklisted. Access denied.")
+		return false
 	}
 
 	// 检查全局 IP 锁定
@@ -435,13 +474,13 @@ func (lm *LockManager) CheckLocked(username, ipaddr string) bool {
 	}
 
 	// 检查全局用户锁定
-	if base.Cfg.MaxGlobalUserBanCount > 0 && lm.CheckGlobalUserLock(username, now) {
+	if username != "" && base.Cfg.MaxGlobalUserBanCount > 0 && lm.CheckGlobalUserLock(username, now) {
 		base.Warn("User", username, "is globally locked. Try again later.")
 		return false
 	}
 
 	// 检查单个用户的 IP 锁定
-	if base.Cfg.MaxBanCount > 0 && lm.CheckUserIPLock(username, ip, now) {
+	if username != "" && base.Cfg.MaxBanCount > 0 && lm.CheckUserIPLock(username, ip, now) {
 		base.Warn("IP", ip, "is locked for user", username, "Try again later.")
 		return false
 	}
@@ -458,8 +497,11 @@ func (lm *LockManager) UpdateLoginStatus(username, ipaddr string, loginStatus bo
 	}
 	now := time.Now()
 
-	// 更新用户登录状态
+	// 更新全局IP锁定状态
 	lm.UpdateGlobalIPLock(ip, now, loginStatus)
-	lm.UpdateGlobalUserLock(username, now, loginStatus)
-	lm.UpdateUserIPLock(username, ip, now, loginStatus)
+	// 仅当username非空时更新用户相关锁定状态
+	if username != "" {
+		lm.UpdateGlobalUserLock(username, now, loginStatus)
+		lm.UpdateUserIPLock(username, ip, now, loginStatus)
+	}
 }

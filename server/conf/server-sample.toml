@@ -9,17 +9,28 @@ db_source = "./conf/anylink.db"
 #证书文件 使用跟nginx一样的证书即可
 cert_file = "./conf/vpn_cert.pem"
 cert_key = "./conf/vpn_cert.key"
+
+# 开启后支持客户端证书验证，客户端未提供证书或证书验证失败，则回退到用户名密码验证
+auth_cert = false
+# 开启后仅支持客户端证书验证，客户端只能使用证书验证，不开启则回退用户名密码验证
+auth_only_cert = false
+#客户端证书CA证书
+client_ca_file = "./conf/client_ca.pem"
+#客户端证书CA密钥
+client_ca_key_file = "./conf/client_ca.key"
+
 files_path = "./conf/files"
 profile = "./conf/profile.xml"
 #profile name(用于区分不同服务端的配置)
 #客户端存放位置
 #Windows 10
-#%ProgramData%Cisco\Cisco AnyConnect Secure Mobility Client\Profile
+#%ProgramData%\Cisco\Cisco AnyConnect Secure Mobility Client\Profile
+#%ProgramData%\Cisco\Cisco Secure Client\VPN\Profile
 #Mac Os X
 #/opt/cisco/anyconnect/profile
 #Linux
 #/opt/cisco/anyconnect/profile
-profile_name = "anylink"
+profile_name = "profile"
 #日志目录,默认为空写入标准输出
 #log_path = "./log"
 log_path = ""
@@ -28,6 +39,8 @@ pprof = true
 
 #系统名称
 issuer = "XX公司VPN"
+#登录横幅
+enable_banner = true
 #后台管理用户
 admin_user = "admin"
 #pass 123456
@@ -52,7 +65,7 @@ admin_addr = ":8800"
 proxy_protocol = false
 
 #开启go标准库http.Server的日志
-http_server_log=false
+http_server_log = false
 
 #虚拟网络类型[tun macvtap tap]
 link_mode = "tun"
@@ -120,13 +133,28 @@ exclude_export_ip = true
 #登录单独验证OTP窗口
 auth_alone_otp = false
 
+# 是否发送OTP验证码
+send_otp = false
+# 发送OTP验证码方式[mail] [phone]
+send_otp_type = "mail"
+
 #加密保存用户密码
 encryption_password = false
+
+# 企业微信域名验证配置
+# 验证文件名
+weixin_work_verify_file_name = "WW_verify_8lm2edfBycwtHwwIN.txt"
+# 验证文件内容
+weixin_work_verify_file_content = "8lmahgsdwcwtHwwIN"
+# 是否开启自动同步LDAP用户(每日凌晨0点)
+sync_ldap_users = false
 
 #防爆破全局开关
 anti_brute_force = true
 #全局IP白名单,多个用逗号分隔，支持单IP和CIDR范围
 ip_whitelist = "192.168.90.1,172.16.0.0/24"
+#全局IP黑名单,多个用逗号分隔，支持单IP和CIDR范围
+ip_blacklist = ""
 
 #锁定时间最好不要超过单位时间
 #单位时间内最大尝试次数，0为关闭该功能

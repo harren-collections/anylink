@@ -70,7 +70,11 @@ func LinkTunnel(w http.ResponseWriter, r *http.Request) {
 	exportIp4 := r.Header.Get("X-Cstp-Remote-Address-Ip4")
 	mobile := r.Header.Get("X-Cstp-License")
 
-	cSess.SetMtu(cstpMtu)
+	//设置 mtu
+	if cSess.Mtu == 0 {
+		cSess.SetMtu(cstpMtu)
+	}
+
 	cSess.MasterSecret = masterSecret
 	cSess.RemoteAddr = r.RemoteAddr
 	cSess.UserAgent = strings.ToLower(r.UserAgent())
@@ -122,6 +126,13 @@ func LinkTunnel(w http.ResponseWriter, r *http.Request) {
 
 	// 设置用户策略
 	SetUserPolicy(cSess.Username, cSess.Group)
+	// 重新设置带宽限制，如果用户策略中有带宽设置
+	if cSess.Group.Bandwidth > 0 {
+		cSess.Limit = sessdata.NewLimitRater(cSess.Group.Bandwidth, cSess.Group.Bandwidth)
+	} else if cSess.Group.Bandwidth == 0 {
+		// 带宽为0时，表示不限速，不设置限速器
+		cSess.Limit = nil
+	}
 
 	// 允许本地LAN访问vpn网络，必须放在路由的第一个
 	if cSess.Group.AllowLan {
@@ -262,10 +273,27 @@ func SetUserPolicy(username string, g *dbdata.Group) {
 	if userPolicy.Id != 0 && userPolicy.Status == 1 {
 		base.Debug(username + " use UserPolicy")
 		g.AllowLan = userPolicy.AllowLan
-		g.ClientDns = userPolicy.ClientDns
-		g.RouteInclude = userPolicy.RouteInclude
-		g.RouteExclude = userPolicy.RouteExclude
-		g.DsExcludeDomains = userPolicy.DsExcludeDomains
-		g.DsIncludeDomains = userPolicy.DsIncludeDomains
+		// 合并逻辑：只有用户策略有值时才覆盖
+		if len(userPolicy.ClientDns) > 0 {
+			g.ClientDns = userPolicy.ClientDns
+		}
+		if len(userPolicy.RouteInclude) > 0 {
+			g.RouteInclude = userPolicy.RouteInclude
+		}
+		if len(userPolicy.RouteExclude) > 0 {
+			g.RouteExclude = userPolicy.RouteExclude
+		}
+		if userPolicy.DsExcludeDomains != "" {
+			g.DsExcludeDomains = userPolicy.DsExcludeDomains
+		}
+		if userPolicy.DsIncludeDomains != "" {
+			g.DsIncludeDomains = userPolicy.DsIncludeDomains
+		}
+		if len(userPolicy.LinkAcl) > 0 {
+			g.LinkAcl = userPolicy.LinkAcl
+		}
+		if userPolicy.Bandwidth >= 0 {
+			g.Bandwidth = userPolicy.Bandwidth
+		}
 	}
 }

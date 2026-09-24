@@ -26,9 +26,9 @@ ldflags="-s -w -X main.appVer=$appVer -X main.commitId=$commitId -X main.buildDa
 export CGO_ENABLED=1
 go build -v -o anylink -trimpath -ldflags "$ldflags"
 
-ls -lh /server/
-
 # 压缩文件
 upx -9 -k anylink
+
+ls -lh /server/
 
 /server/anylink -v

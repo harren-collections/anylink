@@ -112,3 +112,12 @@ func ParseName(name string) string {
 	name = strings.ReplaceAll(name, ";", "-")
 	return name
 }
+
+func RemoveStrFromArr(s []string, r string) []string {
+	for i, v := range s {
+		if v == r {
+			return append(s[:i], s[i+1:]...)
+		}
+	}
+	return s
+}

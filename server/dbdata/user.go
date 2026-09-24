@@ -114,6 +114,9 @@ func checkLocalUser(name, pwd, group string, ext map[string]interface{}) error {
 			return fmt.Errorf("%s %s", name, "用户已过期")
 		}
 	}
+	if v.Type == "ldap" {
+		return fmt.Errorf("%s %s", name, "LDAP用户不能使用本地认证")
+	}
 	// 判断用户组信息
 	if !utils.InArrStr(v.Groups, group) {
 		return fmt.Errorf("%s %s", name, "用户组错误")
@@ -184,6 +187,14 @@ func init() {
 	}()
 }
 
+// 获取动态码
+func GetUserOtp(secret string) (otp string, err error) {
+	if secret == "" {
+		return "", errors.New("secret不能为空")
+	}
+	return gotp.NewDefaultTOTP(secret).Now(), nil
+}
+
 // 判断令牌信息
 func CheckOtp(name, otp, secret string) bool {
 	key := fmt.Sprintf("%s:%s", name, otp)
@@ -196,11 +207,14 @@ func CheckOtp(name, otp, secret string) bool {
 		// 已经存在
 		return false
 	}
-	userOtp[key] = time.Now()
 
 	totp := gotp.NewDefaultTOTP(secret)
-	unix := time.Now().Unix()
-	verify := totp.Verify(otp, unix)
+	now := time.Now().Unix()
+	// 验证当前时间以及前30秒的时间窗口
+	verify := totp.Verify(otp, now) || totp.Verify(otp, now-30)
+	if verify {
+		userOtp[key] = time.Now()
+	}
 
 	return verify
 }

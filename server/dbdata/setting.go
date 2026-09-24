@@ -27,11 +27,12 @@ type SettingAuditLog struct {
 }
 
 type SettingOther struct {
-	LinkAddr    string `json:"link_addr"`
-	Banner      string `json:"banner"`
-	Homecode    int    `json:"homecode"`
-	Homeindex   string `json:"homeindex"`
-	AccountMail string `json:"account_mail"`
+	LinkAddr     string `json:"link_addr"`
+	BannerEnable bool   `json:"banner_enable"`
+	Banner       string `json:"banner"`
+	Homecode     int    `json:"homecode"`
+	Homeindex    string `json:"homeindex"`
+	AccountMail  string `json:"account_mail"`
 }
 
 func StructName(data interface{}) string {

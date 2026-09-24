@@ -43,6 +43,7 @@
                 @change="handleSearch">
             </el-switch>
         </el-form-item>
+        <!--
         <el-form-item>
           <el-button
               class="extra-small-button"
@@ -52,6 +53,8 @@
               @click="handleOneOffline">
             一键下线
           </el-button>
+        </el-form-item>
+        -->
       </el-form>
       
       <el-table

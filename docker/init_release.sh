@@ -11,13 +11,20 @@ fi
 
 
 # docker 启动使用 4.19 以上内核
-apk add --no-cache ca-certificates bash iproute2 tzdata iptables inetutils-telnet
+apk add --no-cache ca-certificates bash iproute2 tzdata inetutils-telnet
 
 # alpine:3.19 兼容老版本 iptables
-apk add --no-cache iptables-legacy
+apk add --no-cache iptables iptables-legacy
+which iptables
+iptables -V
 
+# <= alpine:3.20
 #rm /sbin/iptables
 #ln -s /sbin/iptables-legacy /sbin/iptables
+
+# >= alpine:3.21
+#/usr/sbin/iptables
+#/usr/sbin/iptables-legacy
 
 
 chmod +x /app/docker_entrypoint.sh

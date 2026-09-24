@@ -26,6 +26,7 @@ type Group struct {
 
 type User struct {
 	Id       int    `json:"id" xorm:"pk autoincr not null"`
+	Type     string `json:"type" xorm:"varchar(20) default('local')"`
 	Username string `json:"username" xorm:"varchar(60) not null unique"`
 	Nickname string `json:"nickname" xorm:"varchar(255)"`
 	Email    string `json:"email" xorm:"varchar(255)"`
@@ -35,6 +36,7 @@ type User struct {
 	OtpSecret  string     `json:"otp_secret" xorm:"varchar(255)"`
 	DisableOtp bool       `json:"disable_otp" xorm:"Bool"` // 禁用otp
 	Groups     []string   `json:"groups" xorm:"Text"`
+	Mtu        int        `json:"mtu"`               // 单独设置 mtu
 	Status     int8       `json:"status" xorm:"Int"` // 1正常
 	SendEmail  bool       `json:"send_email" xorm:"Bool"`
 	CreatedAt  time.Time  `json:"created_at" xorm:"DateTime created"`
@@ -78,17 +80,19 @@ type AccessAudit struct {
 }
 
 type Policy struct {
-	Id               int       `json:"id" xorm:"pk autoincr not null"`
-	Username         string    `json:"username" xorm:"varchar(60) not null unique"`
-	AllowLan         bool      `json:"allow_lan" xorm:"Bool"`
-	ClientDns        []ValData `json:"client_dns" xorm:"Text"`
-	RouteInclude     []ValData `json:"route_include" xorm:"Text"`
-	RouteExclude     []ValData `json:"route_exclude" xorm:"Text"`
-	DsExcludeDomains string    `json:"ds_exclude_domains" xorm:"Text"`
-	DsIncludeDomains string    `json:"ds_include_domains" xorm:"Text"`
-	Status           int8      `json:"status" xorm:"Int"` // 1正常 0 禁用
-	CreatedAt        time.Time `json:"created_at" xorm:"DateTime created"`
-	UpdatedAt        time.Time `json:"updated_at" xorm:"DateTime updated"`
+	Id               int            `json:"id" xorm:"pk autoincr not null"`
+	Username         string         `json:"username" xorm:"varchar(60) not null unique"`
+	AllowLan         bool           `json:"allow_lan" xorm:"Bool"`
+	ClientDns        []ValData      `json:"client_dns" xorm:"Text"`
+	RouteInclude     []ValData      `json:"route_include" xorm:"Text"`
+	RouteExclude     []ValData      `json:"route_exclude" xorm:"Text"`
+	DsExcludeDomains string         `json:"ds_exclude_domains" xorm:"Text"`
+	DsIncludeDomains string         `json:"ds_include_domains" xorm:"Text"`
+	LinkAcl          []GroupLinkAcl `json:"link_acl" xorm:"Text"`
+	Bandwidth        int            `json:"bandwidth" xorm:"Int"`
+	Status           int8           `json:"status" xorm:"Int"` // 1正常 0 禁用
+	CreatedAt        time.Time      `json:"created_at" xorm:"DateTime created"`
+	UpdatedAt        time.Time      `json:"updated_at" xorm:"DateTime updated"`
 }
 
 type StatsOnline struct {
@@ -117,4 +121,11 @@ type StatsMem struct {
 	Id        int       `json:"id" xorm:"pk autoincr not null"`
 	Percent   float64   `json:"percent" xorm:"Float"`
 	CreatedAt time.Time `json:"created_at" xorm:"DateTime created index"`
+}
+
+type PasswordReset struct {
+	Token           string `json:"token" xorm:"varchar(60) not null unique"`
+	UserId          int    `json:"id" xorm:"not null"`
+	ExpiresAt       int    `json:"expires_at" xorm:"not null"`
+	LastRequestTime int    `json:"last_request_time" xorm:"int default 0"`
 }

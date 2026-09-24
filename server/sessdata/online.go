@@ -61,6 +61,7 @@ func GetOnlineSess(search_cate string, search_text string, show_sleeper bool) []
 	}
 	sessMux.Lock()
 	defer sessMux.Unlock()
+
 	for _, v := range sessions {
 		v.mux.Lock()
 		cSess := v.CSess

@@ -190,11 +190,16 @@ func (s *Session) NewConn() *ConnSession {
 		base.Error(err)
 		return nil
 	}
+	// 查询user信息
+	user := &dbdata.User{}
+	dbdata.One("username", username, user)
+	// 不判断错误
 
 	cSess := &ConnSession{
 		Sess:           s,
 		MacHw:          macHw,
 		Username:       username,
+		Mtu:            user.Mtu,
 		IpAddr:         ip,
 		closeOnce:      sync.Once{},
 		CloseChan:      make(chan struct{}),
@@ -278,6 +283,9 @@ func (ds *DtlsSession) Close() {
 }
 
 func (cs *ConnSession) GetDtlsSession() *DtlsSession {
+	if cs.dSess.Load() == nil {
+		return nil
+	}
 	ds := cs.dSess.Load().(*DtlsSession)
 	isActive := atomic.LoadInt32(&ds.isActive)
 	if isActive > 0 {

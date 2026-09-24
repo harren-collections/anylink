@@ -1,20 +1,17 @@
 package handler
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"net"
 	"strings"
-	"time"
 
 	"github.com/bjdgyc/anylink/base"
 	"github.com/bjdgyc/anylink/sessdata"
-	"github.com/pion/dtls/v2"
-	"github.com/pion/dtls/v2/pkg/crypto/selfsign"
+	"github.com/pion/dtls/v3"
+	"github.com/pion/dtls/v3/pkg/crypto/selfsign"
 	"github.com/pion/logging"
 )
 
@@ -34,35 +31,50 @@ func startDtls() {
 	logf.Writer = base.GetBaseLw()
 	logf.DefaultLogLevel = logging.LogLevelInfo
 	if base.GetLogLevel() == base.LogLevelTrace {
-		// logf.DefaultLogLevel = logging.LogLevelTrace
+		logf.DefaultLogLevel = logging.LogLevelTrace
 	}
 
 	// https://github.com/pion/dtls/pull/369
 	sessStore := &sessionStore{}
 
-	config := &dtls.Config{
-		Certificates:         []tls.Certificate{certificate},
-		ExtendedMasterSecret: dtls.DisableExtendedMasterSecret,
-		CipherSuites: func() []dtls.CipherSuiteID {
-			var cs = []dtls.CipherSuiteID{}
-			for _, vv := range dtlsCipherSuites {
-				cs = append(cs, vv)
-			}
-			return cs
-		}(),
-		LoggerFactory: logf,
-		MTU:           BufferSize,
-		SessionStore:  sessStore,
-		ConnectContextMaker: func() (context.Context, func()) {
-			return context.WithTimeout(context.Background(), 5*time.Second)
-		},
+	// config := &dtls.Config{
+	//	Certificates:         []tls.Certificate{certificate},
+	//	ExtendedMasterSecret: dtls.DisableExtendedMasterSecret,
+	//	CipherSuites: func() []dtls.CipherSuiteID {
+	//		var cs = []dtls.CipherSuiteID{}
+	//		for _, vv := range dtlsCipherSuites {
+	//			cs = append(cs, vv)
+	//		}
+	//		return cs
+	//	}(),
+	//	LoggerFactory: logf,
+	//	MTU:           BufferSize,
+	//	SessionStore:  sessStore,
+	//	ConnectContextMaker: func() (context.Context, func()) {
+	//		return context.WithTimeout(context.Background(), 5*time.Second)
+	//	},
+	// }
+
+	var cs = []dtls.CipherSuiteID{}
+	for _, vv := range dtlsCipherSuites {
+		cs = append(cs, vv)
+	}
+
+	serverOptions := []dtls.ServerOption{
+		dtls.WithSessionStore(sessStore),
+		dtls.WithCertificates(certificate),
+		dtls.WithExtendedMasterSecret(dtls.DisableExtendedMasterSecret),
+		dtls.WithCipherSuites(cs...),
+		dtls.WithLoggerFactory(logf),
+		dtls.WithMTU(BufferSize),
 	}
 
 	addr, err := net.ResolveUDPAddr("udp", base.Cfg.ServerDTLSAddr)
 	if err != nil {
 		panic(err)
 	}
-	ln, err := dtls.Listen("udp", addr, config)
+	// ln, err := dtls.Listen("udp", addr, config)
+	ln, err := dtls.ListenWithOptions("udp", addr, serverOptions...)
 	if err != nil {
 		panic(err)
 	}
@@ -79,8 +91,22 @@ func startDtls() {
 		go func() {
 			// time.Sleep(1 * time.Second)
 			cc := conn.(*dtls.Conn)
-			did := hex.EncodeToString(cc.ConnectionState().SessionID)
+
+			// 显式执行 DTLS 握手
+			if err = cc.Handshake(); err != nil {
+				base.Error("DTLS handshake error:", err)
+				conn.Close()
+				return
+			}
+
+			state, found := cc.ConnectionState()
+			if !found {
+				conn.Close()
+				return
+			}
+			did := hex.EncodeToString(state.SessionID)
 			cSess := sessdata.Dtls2CSess(did)
+
 			if cSess == nil {
 				conn.Close()
 				return

@@ -31,17 +31,25 @@ func checkTun() {
 	if err != nil {
 		base.Fatal("testTun err: ", err)
 	}
-	// 开启服务器转发
-	// err = execCmd([]string{"sysctl -w net.ipv4.ip_forward=1"})
-	// if err != nil {
-	// 	base.Fatal(err)
-	// }
+
 	if base.Cfg.IptablesNat {
 		// 添加NAT转发规则
 		ipt, err := iptables.New()
 		if err != nil {
 			base.Fatal(err)
 			return
+		}
+
+		if base.InContainer {
+			// 如果在容器中，则使用 iptables-legacy 命令
+			if !supportsNftables() {
+				base.Warn("内核版本较低，使用 iptables-legacy 命令")
+				ipt, err = iptables.New(iptables.Path("iptables-legacy"))
+				if err != nil {
+					base.Fatal(err)
+					return
+				}
+			}
 		}
 
 		// 修复 rockyos nat 不生效

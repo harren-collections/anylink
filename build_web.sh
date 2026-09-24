@@ -2,7 +2,7 @@
 
 rm -rf web/ui server/ui
 
-docker run -it --rm -v $PWD/web:/app -w /app node:16-alpine \
+docker run -it --rm -v $PWD/web:/app -v /data/anylink_node_modules:/app/node_modules -w /app node:16-alpine \
   sh -c "yarn install --registry=https://registry.npmmirror.com && yarn run build"
 
 

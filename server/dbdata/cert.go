@@ -19,8 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pion/dtls/v2/pkg/crypto/selfsign"
-
 	"github.com/bjdgyc/anylink/base"
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/certificate"
@@ -31,6 +29,7 @@ import (
 	"github.com/go-acme/lego/v4/providers/dns/cloudflare"
 	"github.com/go-acme/lego/v4/providers/dns/tencentcloud"
 	"github.com/go-acme/lego/v4/registration"
+	"github.com/pion/dtls/v3/pkg/crypto/selfsign"
 )
 
 var (

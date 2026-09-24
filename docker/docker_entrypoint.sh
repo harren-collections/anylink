@@ -27,10 +27,16 @@ case $var1 in
   fi
 
   # 兼容老版本 iptables
-  if [[ $IPTABLES_LEGACY == "on" ]]; then
-    rm /sbin/iptables
-    ln -s /sbin/iptables-legacy /sbin/iptables
-  fi
+  #if [[ $IPTABLES_LEGACY == "on" ]]; then
+    # alpine <= 3.20
+    #rm /sbin/iptables
+    #ln -s /sbin/iptables-legacy /sbin/iptables
+
+    # alpine >= 3.21
+    #rm /usr/sbin/iptables
+    #ln -s /usr/sbin/iptables-legacy /usr/sbin/iptables
+  #fi
+  iptables -V
 
   exec /app/anylink "$@"
   ;;

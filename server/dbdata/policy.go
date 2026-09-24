@@ -4,8 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/songgao/water/waterutil"
 )
 
 func GetPolicy(Username string) *Policy {
@@ -22,6 +26,73 @@ func SetPolicy(p *Policy) error {
 	if p.Username == "" {
 		return errors.New("用户名错误")
 	}
+
+	// 带宽验证，-1（使用组策略）、0（不限速）
+	if p.Bandwidth < -1 {
+		return errors.New("带宽不能小于-1")
+	}
+
+	// LinkAcl验证
+	linkAcl := []GroupLinkAcl{}
+	for _, v := range p.LinkAcl {
+		if v.Val != "" {
+			_, ipNet, err := parseIpNet(v.Val)
+			if err != nil {
+				return errors.New("GroupLinkAcl 错误" + err.Error())
+			}
+			v.IpNet = ipNet
+
+			// 设置协议数据
+			switch v.Protocol {
+			case TCP:
+				v.IpProto = waterutil.TCP
+			case UDP:
+				v.IpProto = waterutil.UDP
+			case ICMP:
+				v.IpProto = waterutil.ICMP
+			default:
+				v.Protocol = ALL
+			}
+
+			// 端口解析逻辑（复用group中的逻辑）
+			portsStr := v.Port
+			v.Port = strings.TrimSpace(portsStr)
+
+			if regexp.MustCompile(`^\d{1,5}(-\d{1,5})?(,\d{1,5}(-\d{1,5})?)*$`).MatchString(portsStr) {
+				ports := map[uint16]int8{}
+				for _, p := range strings.Split(portsStr, ",") {
+					if p == "" {
+						continue
+					}
+					if regexp.MustCompile(`^\d{1,5}-\d{1,5}$`).MatchString(p) {
+						rp := strings.Split(p, "-")
+						portfrom, err := strconv.ParseUint(rp[0], 10, 16)
+						if err != nil {
+							return errors.New("端口:" + rp[0] + " 格式错误, " + err.Error())
+						}
+						portto, err := strconv.ParseUint(rp[1], 10, 16)
+						if err != nil {
+							return errors.New("端口:" + rp[1] + " 格式错误, " + err.Error())
+						}
+						for i := portfrom; i <= portto; i++ {
+							ports[uint16(i)] = 1
+						}
+					} else {
+						port, err := strconv.ParseUint(p, 10, 16)
+						if err != nil {
+							return errors.New("端口:" + p + " 格式错误, " + err.Error())
+						}
+						ports[uint16(port)] = 1
+					}
+				}
+				v.Ports = ports
+				linkAcl = append(linkAcl, v)
+			} else {
+				return errors.New("端口: " + portsStr + " 格式错误,请用逗号分隔的端口,比如: 22,80,443 连续端口用-,比如:1234-5678")
+			}
+		}
+	}
+	p.LinkAcl = linkAcl
 
 	// 包含路由
 	routeInclude := []ValData{}
@@ -77,11 +148,11 @@ func SetPolicy(p *Policy) error {
 			clientDns = append(clientDns, v)
 		}
 	}
-	if len(routeInclude) == 0 || (len(routeInclude) == 1 && routeInclude[0].Val == "all") {
-		if len(clientDns) == 0 {
-			return errors.New("默认路由，必须设置一个DNS")
-		}
-	}
+	// if len(routeInclude) == 0 || (len(routeInclude) == 1 && routeInclude[0].Val == "all") {
+	// 	if len(clientDns) == 0 {
+	// 		return errors.New("默认路由，必须设置一个DNS")
+	// 	}
+	// }
 	p.ClientDns = clientDns
 
 	// 域名拆分隧道，不能同时填写

@@ -2,11 +2,13 @@ package handler
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"strings"
 	"text/template"
 
@@ -55,35 +57,6 @@ func LinkAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base.Trace(fmt.Sprintf("%+v \n", cr))
-	// setCommonHeader(w)
-	if cr.Type == "logout" {
-		// 退出删除session信息
-		if cr.SessionToken != "" {
-			sessdata.DelSessByStoken(cr.SessionToken)
-		}
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	if cr.Type == "init" {
-		w.WriteHeader(http.StatusOK)
-		data := RequestData{Group: cr.GroupSelect, Groups: dbdata.GetGroupNamesNormal()}
-		tplRequest(tpl_request, w, data)
-		return
-	}
-
-	// 登陆参数判断
-	if cr.Type != "auth-reply" {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	// 锁定状态判断
-	if !lockManager.CheckLocked(cr.Auth.Username, r.RemoteAddr) {
-		w.WriteHeader(http.StatusTooManyRequests)
-		return
-	}
-
 	// 用户活动日志
 	ua := &dbdata.UserActLog{
 		Username:        cr.Auth.Username,
@@ -94,12 +67,180 @@ func LinkAuth(w http.ResponseWriter, r *http.Request) {
 		PlatformVersion: cr.DeviceId.PlatformVersion,
 	}
 
+	// setCommonHeader(w)
+	if cr.Type == "logout" {
+		// 退出删除session信息
+		if cr.SessionToken != "" {
+			sessdata.DelSessByStoken(cr.SessionToken)
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	sessionData := &AuthSession{
 		ClientRequest: cr,
 		UserActLog:    ua,
 	}
+	// 处理客户端的特殊情况
+	// Cisco AnyConnect 移动端在验证失败后会发送空用户组请求，会导致验证死循环从而防爆逻辑失效
+	// OpenConnect 在某些连接阶段也需要发送空组请求，不能直接拒绝
+	// SSO 认证（如企业微信）可能在认证初期也带有空组，需要特别处理
+	if cr.GroupSelect == "" {
+		// Cisco AnyConnect 移动端在发起连接请求时，会发送空用户组
+		if cr.Auth.SsoToken != "" || cr.Type == "init" {
+			base.Debug("允许 SSO 认证请求通过，SsoToken:", cr.Auth.SsoToken)
+		} else if !strings.Contains(userAgent, "openconnect") {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+	}
+	// 锁定状态判断
+	if !lockManager.CheckLocked(cr.Auth.Username, r.RemoteAddr) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	// 检查客户端证书认证
+	if base.Cfg.AuthCert {
+		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+			clientCert := r.TLS.PeerCertificates[0]
+			username := clientCert.Subject.CommonName
+			groupname := clientCert.Subject.OrganizationalUnit[0]
+			if username == "" || groupname == "" {
+				base.Warn("客户端证书缺少用户名或组名")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			ua.Username = username
+			ua.GroupName = groupname
+			// 验证证书有效性和用户状态
+			if dbdata.ValidateClientCert(clientCert, cr.DeviceId.UniqueIdGlobal) {
+				// 证书认证成功，创建会话
+				base.Info("用户通过证书认证:", username)
+
+				sessionData.ClientRequest.GroupSelect = groupname
+				sessionData.ClientRequest.Auth.Username = username
+				ua.Info = "用户通过证书认证登录"
+				ua.Status = dbdata.UserConnected
+				dbdata.UserActLogIns.Add(*ua, userAgent)
+
+				CreateSession(w, r, sessionData)
+				return
+			} else {
+				ua.Info = "客户端证书验证失败"
+				ua.Status = dbdata.UserAuthFail
+				dbdata.UserActLogIns.Add(*ua, userAgent)
+				if base.Cfg.AuthOnlyCert {
+					base.Warn("已开启仅证书验证，但客户端证书验证失败,拒绝访问")
+					return
+				}
+				base.Warn("已开启证书验证，但客户端证书验证失败,回退到用户名密码验证")
+			}
+		} else {
+			if base.Cfg.AuthOnlyCert {
+				base.Warn("已开启仅证书验证，但客户端未提供有效证书,拒绝访问")
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			base.Warn("已开启证书验证，但客户端未提供有效证书,回退到用户名密码验证")
+		}
+	}
+
+	if cr.Type == "init" {
+		// 处理 OpenConnect 客户端的组选择优化
+		// OpenConnect 客户端在连接过程中可能出现重复组选择的问题：
+		// 1. OpenConnect 在初始连接时可能已经携带了组信息
+		// 2. 但在后续的认证流程中，客户端又会显示组选择界面
+		// 3. 这导致用户需要选择两次相同的组
+		//
+		// 解决方案：
+		// 当检测到是 OpenConnect 客户端且已经有组选择时，
+		// 只显示当前已选择的组，避免重复选择组
+		if cr.GroupSelect != "" && strings.Contains(userAgent, "openconnect") {
+			data := RequestData{
+				Group:  cr.GroupSelect,
+				Groups: []string{cr.GroupSelect},
+			}
+			w.WriteHeader(http.StatusOK)
+			tplRequest(tpl_request, w, data)
+			return
+		}
+		// 获取组配置信息
+		groupData := &dbdata.Group{}
+		err := dbdata.One("Name", cr.GroupSelect, groupData)
+		if err == nil && len(groupData.Auth) > 0 {
+			authType := groupData.Auth["type"].(string)
+			if authType == "wxwork" {
+				// 获取企业微信配置，检查是否使用默认浏览器
+				wxworkConfig, err := dbdata.GetAuthWework(cr.GroupSelect)
+				var browserMode string
+				if err == nil && wxworkConfig.UseDefaultBrowser {
+					browserMode = "external" // 使用系统默认浏览器
+				}
+				// 暂时仅支持PC端Cisco Anyconnect客户端
+				if isMobileDevice(r) || strings.Contains(userAgent, "openconnect") {
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+				// 使用企微认证模板
+				data := RequestData{
+					Group:       url.QueryEscape(cr.GroupSelect),
+					Groups:      dbdata.GetGroupNamesNormal(),
+					ServerAddr:  getServerAddr(r),
+					BrowserMode: browserMode,
+				}
+				w.WriteHeader(http.StatusOK)
+				tplRequest(tpl_request_saml, w, data)
+				return
+			}
+		}
+		data := RequestData{Group: cr.GroupSelect, Groups: dbdata.GetGroupNamesNormal()}
+		w.WriteHeader(http.StatusOK)
+		tplRequest(tpl_request, w, data)
+		return
+	}
+
+	// 登陆参数判断
+	if cr.Type != "auth-reply" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if cr.Auth.SsoToken != "" {
+		base.Info("处理SSO认证请求")
+		decodeToken := cr.Auth.SsoToken
+		// base64解码Token
+		if tokenBytes, err := base64.StdEncoding.DecodeString(cr.Auth.SsoToken); err == nil {
+			decodeToken = string(tokenBytes)
+		}
+		// 获取saml会话
+		samlSession, err := SessStore.GetAuthSession(decodeToken)
+		if err != nil {
+			base.Error("会话不存在")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		// 修改客户端请求中的用户信息
+		cr.Auth.Username = samlSession.ClientRequest.Auth.Username
+		cr.GroupSelect = samlSession.ClientRequest.GroupSelect
+
+		// 更新用户活动日志
+		ua.Username = samlSession.ClientRequest.Auth.Username
+		ua.GroupName = samlSession.ClientRequest.GroupSelect
+		ua.Info = "用户通过企微认证登录"
+
+		sessionData.ClientRequest = cr
+		sessionData.UserActLog = ua
+
+		dbdata.UserActLogIns.Add(*ua, userAgent)
+		// 创建会话
+		CreateSession(w, r, sessionData)
+		// 删除saml会话
+		SessStore.DeleteAuthSession(cr.Auth.SsoToken)
+		return
+	}
+
 	// TODO 用户密码校验
-	ext := map[string]interface{}{"mac_addr": cr.MacAddressList.MacAddress}
+	ext := map[string]any{"mac_addr": cr.MacAddressList.MacAddress}
 	err = dbdata.CheckUser(cr.Auth.Username, cr.Auth.Password, cr.GroupSelect, ext)
 	if err != nil {
 		lockManager.UpdateLoginStatus(cr.Auth.Username, r.RemoteAddr, false) // 记录登录失败状态
@@ -117,37 +258,43 @@ func LinkAuth(w http.ResponseWriter, r *http.Request) {
 		tplRequest(tpl_request, w, data)
 		return
 	}
-	dbdata.UserActLogIns.Add(*ua, userAgent)
-
 	v := &dbdata.User{}
 	err = dbdata.One("Username", cr.Auth.Username, v)
 	if err != nil {
 		base.Info("正在使用第三方认证方式登录")
-		CreateSession(w, r, sessionData)
-		return
-	}
-	// 用户otp验证
-	if base.Cfg.AuthAloneOtp && !v.DisableOtp {
-		lockManager.UpdateLoginStatus(cr.Auth.Username, r.RemoteAddr, true) // 重置OTP验证计数
+	} else {
+		// 用户otp验证
+		if base.Cfg.AuthAloneOtp && !v.DisableOtp {
+			lockManager.UpdateLoginStatus(cr.Auth.Username, r.RemoteAddr, true) // 重置OTP验证计数
 
-		sessionID, err := GenerateSessionID()
-		if err != nil {
-			base.Error("Failed to generate session ID: ", err)
-			http.Error(w, "Failed to generate session ID", http.StatusInternalServerError)
+			sessionID, err := GenerateSessionID()
+			if err != nil {
+				base.Error("Failed to generate session ID: ", err)
+				http.Error(w, "Failed to generate session ID", http.StatusInternalServerError)
+				return
+			}
+
+			sessionData.ClientRequest.Auth.OtpSecret = v.OtpSecret
+			SessStore.SaveAuthSession(sessionID, sessionData)
+
+			SetCookie(w, "auth-session-id", sessionID, 0)
+			if base.Cfg.SendOtp {
+				go func(username string) {
+					if err := SendOtpToUser(username); err != nil {
+						base.Error("发送OTP验证码错误: ", err)
+						return
+					}
+					base.Info(username, "OTP验证码已发送")
+				}(cr.Auth.Username)
+			}
+
+			data := RequestData{}
+			w.WriteHeader(http.StatusOK)
+			tplRequest(tpl_otp, w, data)
 			return
 		}
-
-		sessionData.ClientRequest.Auth.OtpSecret = v.OtpSecret
-		SessStore.SaveAuthSession(sessionID, sessionData)
-
-		SetCookie(w, "auth-session-id", sessionID, 0)
-
-		data := RequestData{}
-		w.WriteHeader(http.StatusOK)
-		tplRequest(tpl_otp, w, data)
-		return
 	}
-
+	dbdata.UserActLogIns.Add(*ua, userAgent)
 	CreateSession(w, r, sessionData)
 }
 
@@ -155,6 +302,7 @@ const (
 	tpl_request = iota
 	tpl_complete
 	tpl_otp
+	tpl_request_saml
 )
 
 func tplRequest(typ int, w io.Writer, data RequestData) {
@@ -173,6 +321,9 @@ func tplRequest(typ int, w io.Writer, data RequestData) {
 	case tpl_otp:
 		t, _ := template.New("auth_otp").Parse(auth_otp)
 		_ = t.Execute(w, data)
+	case tpl_request_saml:
+		t, _ := template.New("auth_request_saml").Parse(auth_request_saml)
+		_ = t.Execute(w, data)
 	}
 }
 
@@ -189,6 +340,10 @@ type RequestData struct {
 	ProfileName  string
 	ProfileHash  string
 	CertHash     string
+
+	// saml
+	ServerAddr  string
+	BrowserMode string // 浏览器模式: "external"=使用默认浏览器, ""=使用内置浏览器
 }
 
 var auth_request = `<?xml version="1.0" encoding="UTF-8"?>
@@ -240,7 +395,7 @@ var auth_complete = `<?xml version="1.0" encoding="UTF-8"?>
         <vpn-profile-manifest>
             <vpn rev="1.0">
                 <file type="profile" service-type="user">
-                    <uri>/profile_{{.ProfileName}}.xml</uri>
+                    <uri>/{{.ProfileName}}.xml</uri>
                     <hash type="sha1">{{.ProfileHash}}</hash>
                 </file>
             </vpn>

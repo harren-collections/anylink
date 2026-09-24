@@ -32,6 +32,12 @@ func preData(tmpDir string) {
 		Bandwidth: 1000,
 	}
 	_ = dbdata.Add(&group)
+
+	user := dbdata.User{
+		Username: "user-test",
+		Mtu:      1000,
+	}
+	_ = dbdata.Add(&user)
 	initIpPool()
 }
 

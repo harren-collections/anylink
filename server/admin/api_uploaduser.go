@@ -94,6 +94,7 @@ func UploadUser(file string) error {
 		// updatedAt, _ := time.ParseInLocation("2006-01-02 15:04:05", row[12], time.Local)
 		user := &dbdata.User{
 			Id:         id,
+			Type:       "local",
 			Username:   row[1],
 			Nickname:   row[2],
 			Email:      row[3],

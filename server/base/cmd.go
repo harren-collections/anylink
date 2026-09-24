@@ -148,17 +148,17 @@ func initToolCmd() *cobra.Command {
 		case secret:
 			s, _ := utils.RandSecret(40, 60)
 			s = strings.Trim(s, "=")
-			fmt.Printf("Secret:%s\n", s)
+			fmt.Printf("Secret: %s\n", s)
 		case otp:
 			s := gotp.RandomSecret(32)
-			fmt.Printf("Otp:%s\n\n", s)
+			fmt.Printf("Otp: %s\n\n", s)
 			qrstr := fmt.Sprintf("otpauth://totp/%s:%s?issuer=%s&secret=%s", "anylink_admin", "admin@anylink", "anylink_admin", s)
 			qr, _ := qrcode.New(qrstr, qrcode.High)
 			ss := qr.ToSmallString(false)
 			io.WriteString(os.Stderr, ss)
 		case passwd != "":
 			pass, _ := utils.PasswordHash(passwd)
-			fmt.Printf("Passwd:%s\n", pass)
+			fmt.Printf("Passwd: %s\n", pass)
 		case debug:
 			// linkViper.Debug()
 		default:

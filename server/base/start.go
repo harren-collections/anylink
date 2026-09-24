@@ -1,5 +1,7 @@
 package base
 
+import "sync"
+
 func Start() {
 	execute()
 	initCfg()
@@ -7,6 +9,10 @@ func Start() {
 	initMod()
 }
 
+var once sync.Once
+
 func Test() {
-	initLog()
+	once.Do(func() {
+		initLog()
+	})
 }

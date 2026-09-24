@@ -13,8 +13,8 @@
 # 需要先编译出ui文件后 再执行docker编译
 
 # server
-# golang:1.20-alpine3.19
-FROM golang:1.22-alpine3.19 as builder_golang
+# golang:1.22-alpine3.19
+FROM golang:1.24-alpine3.22 as builder_golang
 
 ARG CN="no"
 ARG appVer="appVer"
@@ -28,11 +28,12 @@ COPY server/ /server/
 COPY web/ui  /server/ui
 
 #RUN apk add gcc musl-dev bash
-RUN sh /tmp/init_build.sh
+RUN --mount=type=cache,target=/go --mount=type=cache,target=/root/.cache/go-build sh /tmp/init_build.sh
 
 
 # anylink
-FROM alpine:3.19
+#alpine:3.19
+FROM alpine:3.22
 LABEL maintainer="github.com/bjdgyc"
 
 ARG CN="no"
@@ -40,7 +41,7 @@ ARG CN="no"
 ENV TZ=Asia/Shanghai
 #开关变量  on  off
 ENV ANYLINK_IN_CONTAINER="on"
-ENV IPTABLES_LEGACY="off"
+#ENV IPTABLES_LEGACY="off"
 
 WORKDIR /app
 COPY docker/init_release.sh /tmp/
@@ -49,6 +50,7 @@ COPY --from=builder_golang /server/anylink  /app/
 COPY docker/docker_entrypoint.sh server/bridge-init.sh ./README.md ./LICENSE version_info /app/
 COPY ./deploy /app/deploy
 COPY ./index_template  /app/index_template
+# 通过 .dockerignore 处理
 COPY ./server/conf  /app/conf
 
 #TODO 本地打包时使用镜像

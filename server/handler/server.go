@@ -67,9 +67,15 @@ func startTls() {
 		MinVersion:   tls.VersionTLS12,
 		CipherSuites: selectedCipherSuites,
 		GetCertificate: func(chi *tls.ClientHelloInfo) (*tls.Certificate, error) {
-			base.Trace("GetCertificate ServerName", chi.ServerName)
+			// base.Trace("GetCertificate ServerName", chi.ServerName)
 			return dbdata.GetCertificateBySNI(chi.ServerName)
 		},
+	}
+	// 开启证书认证
+	if base.Cfg.AuthCert {
+		tlsConfig.ClientAuth = tls.VerifyClientCertIfGiven // 验证客户端证书
+		tlsConfig.ClientCAs = dbdata.LoadClientCAPool()    // 加载客户端CA证书
+		base.Info("已启用客户端证书验证")
 	}
 	srv := &http.Server{
 		Addr:         addr,
@@ -112,12 +118,21 @@ func initRoute() http.Handler {
 
 	r.HandleFunc("/", LinkHome).Methods(http.MethodGet)
 	r.HandleFunc("/", LinkAuth).Methods(http.MethodPost)
-	// r.Handle("/", antiBruteForce(http.HandlerFunc(LinkAuth))).Methods(http.MethodPost)
 	r.HandleFunc("/CSCOSSLC/tunnel", LinkTunnel).Methods(http.MethodConnect)
 	r.HandleFunc("/otp_qr", LinkOtpQr).Methods(http.MethodGet)
 	r.HandleFunc("/otp-verification", LinkAuth_otp).Methods(http.MethodPost)
-	// r.Handle("/otp-verification", antiBruteForce(http.HandlerFunc(LinkAuth_otp))).Methods(http.MethodPost)
-	r.HandleFunc(fmt.Sprintf("/profile_%s.xml", base.Cfg.ProfileName), func(w http.ResponseWriter, r *http.Request) {
+	// 添加Cisco AnyConnect兼容的SAML端点
+	r.HandleFunc("/+CSCOE+/saml/sp/login", SAMLSPLogin).Methods(http.MethodGet)
+	r.HandleFunc("/+CSCOE+/saml_ac_login.html", SAMLACLogin).Methods(http.MethodGet)
+	r.HandleFunc("/+CSCOE+/saml/sp/done", SAMLDone)
+	// 添加企业微信回调路由
+	r.HandleFunc("/WXAuth/callback", WXAuthCallback).Methods(http.MethodGet)
+	// 企业微信验证路由 - 从配置读取文件名
+	if base.Cfg.WexinWorkVerifyFileName != "" {
+		r.HandleFunc("/"+base.Cfg.WexinWorkVerifyFileName, SAMLTest).Methods(http.MethodGet)
+	}
+
+	r.HandleFunc(fmt.Sprintf("/%s.xml", base.Cfg.ProfileName), func(w http.ResponseWriter, r *http.Request) {
 		b, _ := os.ReadFile(base.Cfg.Profile)
 		w.Write(b)
 	}).Methods(http.MethodGet)

@@ -68,11 +68,13 @@ func CountAll(data interface{}) int {
 
 func Find(data interface{}, limit, page int) error {
 	if limit == 0 {
-		return xdb.Find(data)
+		// 默认按主键排序，确保结果一致性
+		return xdb.OrderBy("id ASC").Find(data)
 	}
 
 	start := (page - 1) * limit
-	return xdb.Limit(limit, start).Find(data)
+	// 按主键排序以确保分页结果一致性
+	return xdb.OrderBy("id ASC").Limit(limit, start).Find(data)
 }
 
 func FindWhereCount(data interface{}, where string, args ...interface{}) int {
@@ -82,11 +84,11 @@ func FindWhereCount(data interface{}, where string, args ...interface{}) int {
 
 func FindWhere(data interface{}, limit int, page int, where string, args ...interface{}) error {
 	if limit == 0 {
-		return xdb.Where(where, args...).Find(data)
+		return xdb.Where(where, args...).OrderBy("id ASC").Find(data)
 	}
 
 	start := (page - 1) * limit
-	return xdb.Where(where, args...).Limit(limit, start).Find(data)
+	return xdb.Where(where, args...).OrderBy("id ASC").Limit(limit, start).Find(data)
 }
 
 func CountPrefix(fieldName string, prefix string, data interface{}) int {
@@ -97,18 +99,18 @@ func CountPrefix(fieldName string, prefix string, data interface{}) int {
 func Prefix(fieldName string, prefix string, data interface{}, limit, page int) error {
 	where := xdb.Where(fieldName+" like ?", prefix+"%")
 	if limit == 0 {
-		return where.Find(data)
+		return where.OrderBy("id ASC").Find(data)
 	}
 
 	start := (page - 1) * limit
-	return where.Limit(limit, start).Find(data)
+	return where.OrderBy("id ASC").Limit(limit, start).Find(data)
 }
 
 func FindAndCount(session *xorm.Session, data interface{}, limit, page int) (int64, error) {
 	if limit == 0 {
-		return session.FindAndCount(data)
+		return session.OrderBy("id ASC").FindAndCount(data)
 	}
 	start := (page - 1) * limit
-	totalCount, err := session.Limit(limit, start).FindAndCount(data)
+	totalCount, err := session.OrderBy("id ASC").Limit(limit, start).FindAndCount(data)
 	return totalCount, err
 }

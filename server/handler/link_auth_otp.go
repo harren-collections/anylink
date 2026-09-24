@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/bjdgyc/anylink/admin"
 	"github.com/bjdgyc/anylink/base"
@@ -24,6 +25,7 @@ var lockManager = admin.GetLockManager()
 type AuthSession struct {
 	ClientRequest *ClientRequest
 	UserActLog    *dbdata.UserActLog
+	CreatedAt     time.Time
 	// OtpErrCount   atomic.Uint32 // otp错误次数
 }
 
@@ -40,6 +42,7 @@ func NewSessionStore() *SessionStore {
 }
 
 func (s *SessionStore) SaveAuthSession(sessionID string, session *AuthSession) {
+	session.CreatedAt = time.Now() // 记录创建时间
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.session[sessionID] = session
@@ -53,7 +56,11 @@ func (s *SessionStore) GetAuthSession(sessionID string) (*AuthSession, error) {
 	if !exists {
 		return nil, fmt.Errorf("auth session not found")
 	}
-
+	// 检查是否过期
+	if time.Since(session.CreatedAt) > 5*time.Minute {
+		delete(s.session, sessionID) // 清理过期会话
+		return nil, fmt.Errorf("会话过期")
+	}
 	return session, nil
 }
 
@@ -149,10 +156,13 @@ func CreateSession(w http.ResponseWriter, r *http.Request, authSession *AuthSess
 	rd := RequestData{
 		SessionId:    sess.Sid,
 		SessionToken: sess.Sid + "@" + sess.Token,
-		Banner:       other.Banner,
-		ProfileName:  base.Cfg.ProfileName,
-		ProfileHash:  profileHash,
-		CertHash:     certHash,
+		// Banner:       other.Banner,
+		ProfileName: base.Cfg.ProfileName,
+		ProfileHash: profileHash,
+		CertHash:    certHash,
+	}
+	if base.Cfg.EnableBanner && other.BannerEnable {
+		rd.Banner = other.Banner
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -225,6 +235,45 @@ func LinkAuth_otp(w http.ResponseWriter, r *http.Request) {
 	// 删除临时会话信息
 	SessStore.DeleteAuthSession(sessionID)
 	// DeleteCookie(w, "auth-session-id")
+}
+
+// 发送用户OTP验证码
+func SendOtpToUser(username string) error {
+	// 获取用户信息
+	user := &dbdata.User{}
+	err := dbdata.One("Username", username, user)
+	if err != nil {
+		return fmt.Errorf("用户不存在: %v", err)
+	}
+	// 生成OTP
+	otp, err := dbdata.GetUserOtp(user.OtpSecret)
+	if err != nil {
+		return fmt.Errorf("生成OTP失败: %v", err)
+	}
+
+	// 发送OTP验证码
+	message := fmt.Sprintf("您的验证码是: %s，有效期60秒", otp)
+
+	switch base.Cfg.SendOtpType {
+	case "mail":
+		if user.Email == "" {
+			return fmt.Errorf("用户邮箱为空")
+		}
+		if err := admin.SendMail(base.Cfg.Issuer, user.Email, message, nil); err != nil {
+			return err
+		}
+	case "phone":
+		// if user.Phone == "" {
+		// 	return fmt.Errorf("用户手机为空")
+		// }
+		// if err := admin.SendPhone(user.Phone, message); err != nil {
+		// 	return err
+		// }
+	default:
+		return fmt.Errorf("未知的发送方式")
+	}
+
+	return nil
 }
 
 var auth_otp = `<?xml version="1.0" encoding="UTF-8"?>

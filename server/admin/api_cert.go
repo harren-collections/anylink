@@ -2,10 +2,12 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/bjdgyc/anylink/base"
 	"github.com/bjdgyc/anylink/dbdata"
@@ -96,4 +98,389 @@ func CreatCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	RespSucess(w, "生成证书成功")
+}
+
+// 初始化客户端 CA
+func InitClientCA(w http.ResponseWriter, r *http.Request) {
+	// 检查 CA 文件是否已存在
+	caExists := true
+	if _, err := os.Stat(base.Cfg.ClientCertCAFile); errors.Is(err, os.ErrNotExist) {
+		caExists = false
+	}
+	keyExists := true
+	if _, err := os.Stat(base.Cfg.ClientCertCAKeyFile); errors.Is(err, os.ErrNotExist) {
+		keyExists = false
+	}
+
+	if caExists && keyExists {
+		RespError(w, RespInternalErr, "客户端 CA 已存在，请勿重复初始化,如需强制初始化可在服务器后台删除客户端CA文件")
+		return
+	}
+	err := dbdata.GenerateClientCA()
+	if err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("客户端 CA 生成失败: %v", err))
+		return
+	}
+	RespSucess(w, "客户端 CA 初始化成功")
+}
+
+// 生成客户端证书
+func GenerateClientCert(w http.ResponseWriter, r *http.Request) {
+	username := r.FormValue("username")
+	if username == "" {
+		RespError(w, RespInternalErr, "用户名不能为空")
+		return
+	}
+	groupname := r.FormValue("group_name")
+	if groupname == "" {
+		RespError(w, RespInternalErr, "用户组不能为空")
+		return
+	}
+	csrData := r.FormValue("csr")
+
+	deviceBindingEnabled := false
+	if deviceBindingStr := r.FormValue("device_binding_enabled"); deviceBindingStr == "true" {
+		deviceBindingEnabled = true
+	}
+
+	// 获取最大设备数
+	maxDevicesStr := r.FormValue("max_devices")
+	if maxDevicesStr == "" {
+		RespError(w, RespInternalErr, "最大设备数不能为空")
+		return
+	}
+
+	maxDevices, err := strconv.Atoi(maxDevicesStr)
+	if err != nil || maxDevices < 0 {
+		RespError(w, RespInternalErr, "最大设备数必须为非负整数")
+		return
+	}
+
+	// 检查用户是否存在
+	user := &dbdata.User{}
+	if err := dbdata.One("Username", username, user); err != nil {
+		RespError(w, RespInternalErr, "用户不存在")
+		return
+	}
+
+	// 生成客户端证书
+	var certData *dbdata.ClientCertData
+	if csrData != "" {
+		certData, err = dbdata.GenerateClientCert(username, groupname, deviceBindingEnabled, maxDevices, csrData)
+	} else {
+		certData, err = dbdata.GenerateClientCert(username, groupname, deviceBindingEnabled, maxDevices)
+	}
+	if err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("证书生成失败: %v", err))
+		return
+	}
+
+	RespSucess(w, certData)
+}
+
+// 更新客户端证书的最大设备数
+func UpdateClientCertMaxDevices(w http.ResponseWriter, r *http.Request) {
+	username := r.FormValue("username")
+	if username == "" {
+		RespError(w, RespInternalErr, "用户名不能为空")
+		return
+	}
+
+	groupname := r.FormValue("groupname")
+	if groupname == "" {
+		RespError(w, RespInternalErr, "用户组不能为空")
+		return
+	}
+
+	maxDevicesStr := r.FormValue("max_devices")
+	if maxDevicesStr == "" {
+		RespError(w, RespInternalErr, "最大设备数不能为空")
+		return
+	}
+
+	maxDevices, err := strconv.Atoi(maxDevicesStr)
+	if err != nil || maxDevices < 1 {
+		RespError(w, RespInternalErr, "最大设备数必须为正整数")
+		return
+	}
+
+	// 获取证书记录
+	certData, err := dbdata.GetClientCert(username, groupname)
+	if err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("获取证书失败: %v", err))
+		return
+	}
+
+	// 检查当前绑定设备数是否超过新设置的最大值
+	if len(certData.DeviceId) > maxDevices {
+		RespError(w, RespInternalErr, fmt.Sprintf("当前已绑定 %d 台设备，不能少于当前绑定数", len(certData.DeviceId)))
+		return
+	}
+
+	// 更新最大设备数
+	certData.MaxDevices = maxDevices
+	err = certData.Save()
+	if err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("更新证书失败: %v", err))
+		return
+	}
+
+	RespSucess(w, certData)
+}
+
+// 下载客户端 P12 证书
+func DownloadClientP12(w http.ResponseWriter, r *http.Request) {
+	username := r.FormValue("username")
+	groupname := r.FormValue("groupname")
+	password := r.FormValue("password")
+
+	if username == "" {
+		RespError(w, RespInternalErr, "用户名不能为空")
+		return
+	}
+	if groupname == "" {
+		RespError(w, RespInternalErr, "用户组不能为空")
+		return
+	}
+
+	// if password == "" {
+	// 	password = "123456" // 默认密码
+	// }
+
+	// 下载CSR模式的证书
+	clientCert, err := dbdata.GetClientCert(username, groupname)
+	if err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("获取证书失败: %v", err))
+		return
+	}
+
+	if clientCert.IsCSRBased {
+		w.Header().Set("Content-Type", "application/x-pem-file")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.cer", username))
+		w.Write([]byte(clientCert.Certificate))
+		return
+	}
+
+	// 生成 P12 证书
+	p12Data, err := dbdata.GenerateClientP12FromDB(username, groupname, password)
+	if err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("证书下载失败: %v", err))
+		return
+	}
+
+	// 设置下载响应头
+	w.Header().Set("Content-Type", "application/x-pkcs12")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.p12", username))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(p12Data)))
+	w.Write(p12Data)
+}
+
+// 切换客户端证书状态（禁用/启用）
+func ChangeClientCertStatus(w http.ResponseWriter, r *http.Request) {
+	username := r.FormValue("username")
+	if username == "" {
+		RespError(w, RespInternalErr, "用户名不能为空")
+		return
+	}
+	groupname := r.FormValue("groupname")
+	if groupname == "" {
+		RespError(w, RespInternalErr, "用户组不能为空")
+		return
+	}
+
+	clientCert, err := dbdata.GetClientCert(username, groupname)
+	if err != nil {
+		RespError(w, RespInternalErr, "证书不存在")
+		return
+	}
+
+	err = clientCert.ChangeStatus()
+	if err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("证书状态切换失败: %v", err))
+		return
+	}
+
+	statusText := "启用"
+	if clientCert.Status == dbdata.CertStatusDisabled {
+		statusText = "禁用"
+	}
+
+	RespSucess(w, fmt.Sprintf("证书%s成功", statusText))
+}
+
+// 删除客户端证书
+func DeleteClientCert(w http.ResponseWriter, r *http.Request) {
+	username := r.FormValue("username")
+	if username == "" {
+		RespError(w, RespInternalErr, "用户名不能为空")
+		return
+	}
+	groupname := r.FormValue("groupname")
+	if groupname == "" {
+		RespError(w, RespInternalErr, "用户组不能为空")
+		return
+	}
+
+	clientCert, err := dbdata.GetClientCert(username, groupname)
+	if err != nil {
+		RespError(w, RespInternalErr, "证书不存在")
+		return
+	}
+
+	err = clientCert.Delete()
+	if err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("证书删除失败: %v", err))
+		return
+	}
+
+	RespSucess(w, "证书删除成功")
+}
+
+// 获取客户端证书列表
+func GetClientCertList(w http.ResponseWriter, r *http.Request) {
+	pageSize := 10
+	pageIndex := 1
+
+	if r.FormValue("page_size") != "" {
+		if ps, err := strconv.Atoi(r.FormValue("page_size")); err == nil {
+			pageSize = ps
+		}
+	}
+
+	if r.FormValue("page_index") != "" {
+		if pi, err := strconv.Atoi(r.FormValue("page_index")); err == nil {
+			pageIndex = pi
+		}
+	}
+
+	// 添加搜索参数
+	username := r.FormValue("username")
+	groupname := r.FormValue("groupname")
+	status := r.FormValue("status")
+
+	certs, total, err := dbdata.GetClientCertList(pageSize, pageIndex, username, groupname, status)
+	if err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("获取证书列表失败: %v", err))
+		return
+	}
+
+	data := map[string]any{
+		"list":  certs,
+		"total": total,
+	}
+
+	RespSucess(w, data)
+}
+
+// 获取用户证书生成所需信息
+func UserCertInfo(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+
+	// 获取所有启用的用户
+	var users []dbdata.User
+	err := dbdata.Find(&users, 1000, 1)
+	if err != nil && !dbdata.CheckErrNotFound(err) {
+		RespError(w, RespInternalErr, err)
+		return
+	}
+
+	// 获取所有启用的组
+	var groups []dbdata.Group
+	err = dbdata.Find(&groups, 1000, 1)
+	if err != nil && !dbdata.CheckErrNotFound(err) {
+		RespError(w, RespInternalErr, err)
+		return
+	}
+
+	// 过滤启用的用户和组
+	activeUsers := make([]dbdata.User, 0)
+	for _, user := range users {
+		if user.Status == 1 {
+			activeUsers = append(activeUsers, user)
+		}
+	}
+
+	activeGroups := make([]dbdata.Group, 0)
+	for _, group := range groups {
+		if group.Status == 1 {
+			activeGroups = append(activeGroups, group)
+		}
+	}
+
+	data := map[string]any{
+		"users":  activeUsers,
+		"groups": activeGroups,
+	}
+
+	RespSucess(w, data)
+}
+
+// 解绑特定设备
+func UnbindDevice(w http.ResponseWriter, r *http.Request) {
+	username := r.FormValue("username")
+	groupname := r.FormValue("groupname")
+	deviceId := r.FormValue("device_id")
+
+	if username == "" || groupname == "" || deviceId == "" {
+		RespError(w, RespParamErr, "用户名、用户组和设备ID不能为空")
+		return
+	}
+
+	// 获取证书信息
+	cert, err := dbdata.GetClientCert(username, groupname)
+	if err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("获取证书失败: %v", err))
+		return
+	}
+
+	// 解绑设备
+	if err := cert.UnbindDevice(deviceId); err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("解绑设备失败: %v", err))
+		return
+	}
+
+	base.Info("证书设备已解绑", username, groupname, deviceId)
+	RespSucess(w, nil)
+}
+
+// 更新客户端证书的设备绑定开关
+func UpdateClientCertDeviceBinding(w http.ResponseWriter, r *http.Request) {
+	username := r.FormValue("username")
+	if username == "" {
+		RespError(w, RespInternalErr, "用户名不能为空")
+		return
+	}
+
+	groupname := r.FormValue("groupname")
+	if groupname == "" {
+		RespError(w, RespInternalErr, "用户组不能为空")
+		return
+	}
+
+	// 获取设备绑定开关
+	deviceBindingEnabled := false
+	if deviceBindingStr := r.FormValue("device_binding_enabled"); deviceBindingStr == "true" {
+		deviceBindingEnabled = true
+	}
+
+	// 获取证书记录
+	certData, err := dbdata.GetClientCert(username, groupname)
+	if err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("获取证书失败: %v", err))
+		return
+	}
+
+	// 如果关闭设备绑定，清空已绑定的设备ID
+	if !deviceBindingEnabled && certData.DeviceBindingEnabled {
+		certData.DeviceId = []string{}
+	}
+
+	// 更新设备绑定开关
+	certData.DeviceBindingEnabled = deviceBindingEnabled
+	if err := certData.Save(); err != nil {
+		RespError(w, RespInternalErr, fmt.Sprintf("更新证书失败: %v", err))
+		return
+	}
+
+	RespSucess(w, certData)
 }
